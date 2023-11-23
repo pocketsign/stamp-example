@@ -1,0 +1,17 @@
+{
+	"scripts": {
+		"dev": "wrangler dev src/index.tsx",
+		"deploy": "wrangler deploy --minify src/index.tsx"
+	},
+	"dependencies": {
+		"@buf/pocketsign_apis.bufbuild_es": "^1.4.2-20231123095745-f9d4a8994751.1",
+		"@buf/pocketsign_apis.connectrpc_es": "^1.1.3-20231123095745-f9d4a8994751.1",
+		"@connectrpc/connect": "^1.1.3",
+		"@connectrpc/connect-web": "^1.1.3",
+		"hono": "^3.10.2"
+	},
+	"devDependencies": {
+		"@cloudflare/workers-types": "^4.20231121.0",
+		"wrangler": "^3.17.1"
+	}
+}

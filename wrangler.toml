@@ -1,0 +1,5 @@
+name = "stamp-example"
+compatibility_date = "2023-11-01"
+
+[vars]
+POCKETSIGN_TOKEN = "your_api_token_here"
