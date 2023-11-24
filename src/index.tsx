@@ -3,7 +3,7 @@ import { createPromiseClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
-import { Callback, Index } from "./pages";
+import { Callback, Error, Index } from "./pages";
 
 const client = createPromiseClient(
 	SessionService,
@@ -75,35 +75,39 @@ app.post("/apply", async c => {
 });
 
 app.get("/callback", async c => {
-	const resp = await client.finalizeSession(
-		{
-			id: getCookie(c, "session_id"),
-		},
-		{
-			headers: {
-				Authorization: `Bearer ${c.env?.POCKETSIGN_TOKEN}`,
+	try {
+		const resp = await client.finalizeSession(
+			{
+				id: getCookie(c, "session_id"),
 			},
-		},
-	);
+			{
+				headers: {
+					Authorization: `Bearer ${c.env?.POCKETSIGN_TOKEN}`,
+				},
+			},
+		);
 
-	const content = resp.results
-		.map(({ result }) => {
-			if (result.case === "digitalSignature") {
-				const content = result.value.result?.certificateContent?.typeSpecificContent;
-				if (content?.case === "jpkiCardDigitalSignatureContent") {
-					return `${content.value.commonName} 様、お申し込みありがとうございました。ご自宅（${content.value.address}）に契約書をお送りします。`;
+		const content = resp.results
+			.map(({ result }) => {
+				if (result.case === "digitalSignature") {
+					const content = result.value.result?.certificateContent?.typeSpecificContent;
+					if (content?.case === "jpkiCardDigitalSignatureContent") {
+						return `${content.value.commonName} 様、お申し込みありがとうございました。ご自宅（${content.value.address}）に契約書をお送りします。`;
+					}
+					return `お申し込みが確認できませんでした。`;
 				}
-				return `お申し込みが確認できませんでした。`;
-			}
-			if (result.case === "personalInfoConsent") {
-				return `また、最新4情報の提供に同意いただきありがとうございます。同意は ${result.value.result?.expiresAt
-					?.toDate()
-					.toLocaleString()} まで有効です。`;
-			}
-		})
-		.join("\n");
+				if (result.case === "personalInfoConsent") {
+					return `また、最新4情報の提供に同意いただきありがとうございます。同意は ${result.value.result?.expiresAt
+						?.toDate()
+						.toLocaleString()} まで有効です。`;
+				}
+			})
+			.join("\n");
 
-	return c.html(<Callback content={content} />);
+		return c.html(<Callback content={content} />);
+	} catch (e) {
+		return c.html(<Error message={`エラーが発生しました\n\n${JSON.stringify(e, undefined, 2)}`} />);
+	}
 });
 
 export default app;

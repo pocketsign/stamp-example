@@ -41,3 +41,12 @@ export const Callback: FC<{ content: string }> = ({ content }) => {
 		</Layout>
 	);
 };
+
+export const Error: FC<{ message: string }> = ({ message }) => {
+	return (
+		<Layout>
+			<h1>エラー</h1>
+			<pre>{message}</pre>
+		</Layout>
+	);
+};
