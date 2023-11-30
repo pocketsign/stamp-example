@@ -32,28 +32,43 @@ app.post("/apply", async c => {
 	const { plan } = await c.req.parseBody();
 
 	const url = new URL(c.req.url);
+
+	// ランダムかつ再利用不可能な文字列 `nonce` を生成します。
 	const nonce = crypto.randomUUID();
+
+	// 公的個人認証サービス(JPKI)より発行された署名用電子証明書を用いた署名や、最新の基本４情報取得についての同意について、利用者に要求を行うためのセッションを作成します。
 	const resp = await client.createSession(
 		{
+			// 署名が完了した後に利用者がコールバックされるべき URL（コールバック URL）を指定します。
+			// コールバックリクエストはGETリクエストとして送信され、署名セッションIDがクエリパラメータ `session_id` として追加されます。
 			callbackUrl: `${url.origin}/callback`,
+			// 申込情報への署名要求、最新４情報取得についての同意要求を指定します。
 			requests: [
 				{
+					// trueを設定した場合は、利用者がこの要求をスキップできなくなります。
 					required: true,
 					request: {
+						// 公的個人認証サービス(JPKI)より発行された署名用電子証明書による署名の作成を要求します。
 						case: "digitalSignature",
 						value: {
+							// 署名対象となるデータを指定します。
 							content: new TextEncoder().encode(
 								`【申込書】\n利用規約に同意し、選択したプランに申し込みます。\nプラン: ${plan}`,
 							),
+							// この値は、ユーザーに何を署名させようとしているのかを示すために利用されます。
+							// Markdown形式（CommonMark）で記述された文字列を指定することができます。
 							printableContent: `ポケットサインターネットにお申し込みいただきありがとうございます。申込内容は以下のとおりです。\n\nプラン: ${plan}`,
 						},
 					},
 				},
 				{
+					// falseを設定した場合は、利用者がこの要求をスキップできるようになります。
 					required: false,
 					request: {
+						// 最新の基本４情報取得についての同意を利用者に要求します。
 						case: "personalInfoConsent",
 						value: {
+							// 基本４情報のうち、提供に同意させるものを指定します。
 							preference: {
 								address: true,
 								commonName: true,
@@ -64,23 +79,32 @@ app.post("/apply", async c => {
 					},
 				},
 			],
+			// この値は、セッションがFinalizeされるまでPocketSign Stampが保持します。
+			// ここでは、ランダムかつ再利用不可能な文字列 `nonce` を指定しています。
 			metadata: { nonce },
 		},
 		{
 			headers: {
+				// APIトークンを利用して認証します。
 				Authorization: `Bearer ${c.env?.POCKETSIGN_TOKEN}`,
 			},
 		},
 	);
 
+	// ユーザーのブラウザセッションと紐づけて `nonce` を保存します。
 	setCookie(c, "nonce", nonce);
+
+	// 利用者を署名を要求する Web ページの URL（リダイレクト URL）に遷移させます。
 	return c.redirect(resp.redirectUrl);
 });
 
+// Stamp Web サイトからのコールバックリクエストを受け取るエンドポイントです。
 app.get("/callback", async c => {
 	try {
+		// セッションを終了し、結果を取得します。
 		const resp = await client.finalizeSession(
 			{
+				// コールバック URL にクエリパラメータ `session_id` として追加された署名セッションIDを指定します。
 				id: c.req.query("session_id"),
 			},
 			{
@@ -90,20 +114,28 @@ app.get("/callback", async c => {
 			},
 		);
 
+		// ユーザーのブラウザセッションと紐づけて保存していた `nonce` と APIレスポンスの `metadata.nonce` を比較します。
+		// 一致しない場合、当該書面やそれに関連するデータは不正に作成された可能性があります。
 		if (getCookie(c, "nonce") !== resp.metadata.nonce) {
 			return c.html(<Error message={"不正なリダイレクトを検知しました。"} />);
 		}
 
+		// APIレスポンスの `results` には、CreateSessionの `requests` で指定した要求に対する結果が含まれます。
 		const content = resp.results
 			.map(({ result }) => {
+				// 公的個人認証サービス(JPKI)より発行された署名用電子証明書による署名の結果を確認します。
 				if (result.case === "digitalSignature") {
+					// 署名が正常に作成された場合
 					if (result.value.response.case === "result") {
+						// 署名の検証結果がOKの場合
 						if (result.value.response.value.verification?.result === Verification_Result.OK) {
 							const content = result.value.response.value.certificateContent?.typeSpecificContent;
 							if (content?.case === "jpkiCardDigitalSignatureContent") {
 								return `${content.value.commonName} 様、お申し込みありがとうございました。ご自宅（${content.value.address}）に契約書をお送りします。`;
 							}
-						} else {
+						}
+						// 署名の検証に失敗した場合
+						else {
 							return `本人確認に失敗しました。理由：${
 								{
 									[Verification_Result.SIGNATURE_MISMATCH]: "署名が一致しませんでした",
@@ -116,16 +148,22 @@ app.get("/callback", async c => {
 								]
 							}。`;
 						}
-					} else {
+					}
+					// 署名が正常に作成されなかった場合
+					else {
 						return `お申し込みが確認できませんでした。理由：${result.value.response.value?.message}`;
 					}
 				}
+				// 最新の基本４情報取得についての同意を `required: false` としていた場合、同意が得られない可能性があり、その場合 `results` に含まれません。
 				if (result.case === "personalInfoConsent") {
+					// 同意が得られた場合
 					if (result.value.response.case === "result") {
 						return `また、最新4情報の提供に同意いただきありがとうございます。同意は ${result.value.response.value.expiresAt
 							?.toDate()
 							.toLocaleString()} まで有効です。`;
-					} else {
+					}
+					// 何らかの理由（例：証明書の期限切れ）で同意が確認できなかった場合
+					else {
 						return `最新4情報の提供の同意が確認できませんでした。理由：${result.value.response.value?.message}`;
 					}
 				}
