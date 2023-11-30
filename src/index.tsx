@@ -31,6 +31,7 @@ app.post("/apply", async c => {
 	const { plan } = await c.req.parseBody();
 
 	const url = new URL(c.req.url);
+	const nonce = crypto.randomUUID();
 	const resp = await client.createSession(
 		{
 			callbackUrl: `${url.origin}/callback`,
@@ -62,6 +63,7 @@ app.post("/apply", async c => {
 					},
 				},
 			],
+			metadata: { nonce },
 		},
 		{
 			headers: {
@@ -70,6 +72,7 @@ app.post("/apply", async c => {
 		},
 	);
 
+	setCookie(c, "nonce", nonce);
 	return c.redirect(resp.redirectUrl);
 });
 
@@ -85,6 +88,10 @@ app.get("/callback", async c => {
 				},
 			},
 		);
+
+		if (getCookie(c, "nonce") !== resp.metadata.nonce) {
+			return c.html(<Error message={"不正なリダイレクトを検知しました。"} />);
+		}
 
 		const content = resp.results
 			.map(({ result }) => {
