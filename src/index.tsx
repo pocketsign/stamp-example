@@ -70,7 +70,6 @@ app.post("/apply", async c => {
 		},
 	);
 
-	setCookie(c, "session_id", resp.id);
 	return c.redirect(resp.redirectUrl);
 });
 
@@ -78,7 +77,7 @@ app.get("/callback", async c => {
 	try {
 		const resp = await client.finalizeSession(
 			{
-				id: getCookie(c, "session_id"),
+				id: c.req.query("session_id"),
 			},
 			{
 				headers: {
