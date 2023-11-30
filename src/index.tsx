@@ -31,9 +31,15 @@ app.post("/apply", async c => {
 	const { plan } = await c.req.parseBody();
 
 	const url = new URL(c.req.url);
+
+	// ランダムかつ再利用不可能な文字列 `nonce` を生成します。
 	const nonce = crypto.randomUUID();
+
+	// 公的個人認証サービス(JPKI)より発行された署名用電子証明書を用いた署名や、最新４情報の取得を行うための同意について、利用者に要求を行うためのセッションを作成します。
 	const resp = await client.createSession(
 		{
+			// セッションが完了した際に利用者がコールバックされるべきURLを指定します。
+			// コールバックリクエストはGETリクエストとして送信され、署名セッションIDがクエリパラメータ `session_id` として追加されます。
 			callbackUrl: `${url.origin}/callback`,
 			requests: [
 				{
@@ -63,6 +69,8 @@ app.post("/apply", async c => {
 					},
 				},
 			],
+			// この値は、セッションがFinalizeされるまでPocketSign Stampが保持します。
+			// ここでは、ランダムかつ再利用不可能な文字列 `nonce` を指定しています。
 			metadata: { nonce },
 		},
 		{
@@ -72,14 +80,20 @@ app.post("/apply", async c => {
 		},
 	);
 
+	// ユーザーのブラウザセッションと紐づけて `nonce` を保存します。
 	setCookie(c, "nonce", nonce);
+
+	// Stamp Webサイトへリダイレクトします。
 	return c.redirect(resp.redirectUrl);
 });
 
+// Stamp Webサイトからのコールバックリクエストを受け取るエンドポイントです。
 app.get("/callback", async c => {
 	try {
+		// セッションを終了し、結果を取得します。
 		const resp = await client.finalizeSession(
 			{
+				// クエリパラメータ `session_id` として追加された署名セッションIDを指定します。
 				id: c.req.query("session_id"),
 			},
 			{
@@ -89,6 +103,8 @@ app.get("/callback", async c => {
 			},
 		);
 
+		// ユーザーのブラウザセッションと紐づけて保存していた `nonce` と APIレスポンスの `metadata.nonce` を比較します。
+		// 一致しない場合、当該書面やそれに関連するデータは不正に作成された可能性があります。
 		if (getCookie(c, "nonce") !== resp.metadata.nonce) {
 			return c.html(<Error message={"不正なリダイレクトを検知しました。"} />);
 		}
@@ -102,6 +118,7 @@ app.get("/callback", async c => {
 					}
 					return `お申し込みが確認できませんでした。`;
 				}
+				// 最新4情報の提供への同意を required: false としていたため、同意が得られない場合があり、その場合resultsに含まれません。
 				if (result.case === "personalInfoConsent") {
 					return `また、最新4情報の提供に同意いただきありがとうございます。同意は ${result.value.result?.expiresAt
 						?.toDate()
