@@ -37,7 +37,7 @@ export const Callback: FC<{ content: string }> = ({ content }) => {
 	return (
 		<Layout>
 			<h1>ポケットサインターネット　お申し込み完了</h1>
-			<p>{content}</p>
+			<p style="white-space: pre;">{content}</p>
 		</Layout>
 	);
 };

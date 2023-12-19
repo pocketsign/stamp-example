@@ -4,6 +4,7 @@ import { createConnectTransport } from "@connectrpc/connect-web";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { Callback, Error, Index } from "./pages";
+import { Verification_Result } from "@buf/pocketsign_apis.bufbuild_es/pocketsign/verify/v2/types_pb";
 
 const client = createPromiseClient(
 	SessionService,
@@ -96,16 +97,37 @@ app.get("/callback", async c => {
 		const content = resp.results
 			.map(({ result }) => {
 				if (result.case === "digitalSignature") {
-					const content = result.value.result?.certificateContent?.typeSpecificContent;
-					if (content?.case === "jpkiCardDigitalSignatureContent") {
-						return `${content.value.commonName} 様、お申し込みありがとうございました。ご自宅（${content.value.address}）に契約書をお送りします。`;
+					if (result.value.response.case === "result") {
+						if (result.value.response.value.verification?.result === Verification_Result.OK) {
+							const content = result.value.response.value.certificateContent?.typeSpecificContent;
+							if (content?.case === "jpkiCardDigitalSignatureContent") {
+								return `${content.value.commonName} 様、お申し込みありがとうございました。ご自宅（${content.value.address}）に契約書をお送りします。`;
+							}
+						} else {
+							return `本人確認に失敗しました。理由：${
+								{
+									[Verification_Result.SIGNATURE_MISMATCH]: "署名が一致しませんでした",
+									[Verification_Result.CERTIFICATE_REVOKED]: "証明書が失効しています",
+									[Verification_Result.CERTIFICATE_EXPIRED]: "証明書が期限切れです",
+									[Verification_Result.UNSPECIFIED]: "不明なエラーが発生しました",
+								}[
+									result.value.response.value.verification?.result ??
+										Verification_Result.UNSPECIFIED
+								]
+							}。`;
+						}
+					} else {
+						return `お申し込みが確認できませんでした。理由：${result.value.response.value?.message}`;
 					}
-					return `お申し込みが確認できませんでした。`;
 				}
 				if (result.case === "personalInfoConsent") {
-					return `また、最新4情報の提供に同意いただきありがとうございます。同意は ${result.value.result?.expiresAt
-						?.toDate()
-						.toLocaleString()} まで有効です。`;
+					if (result.value.response.case === "result") {
+						return `また、最新4情報の提供に同意いただきありがとうございます。同意は ${result.value.response.value.expiresAt
+							?.toDate()
+							.toLocaleString()} まで有効です。`;
+					} else {
+						return `最新4情報の提供の同意が確認できませんでした。理由：${result.value.response.value?.message}`;
+					}
 				}
 			})
 			.join("\n");
