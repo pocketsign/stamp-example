@@ -1,3 +1,4 @@
+import { ErrorInfo } from "@buf/googleapis_googleapis.bufbuild_es/google/rpc/error_details_pb";
 import { SessionService } from "@buf/pocketsign_apis.connectrpc_es/pocketsign/stamp/v1/session_connect";
 import { createPromiseClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
@@ -164,7 +165,12 @@ app.get("/callback", async c => {
 					}
 					// 何らかの理由（例：証明書の期限切れ）で同意が確認できなかった場合
 					else {
-						return `最新4情報の提供の同意が確認できませんでした。理由：${result.value.response.value?.message}`;
+						return `最新4情報の提供の同意が確認できませんでした。理由：${
+							result.value.response.value?.details
+								.filter(it => it.is(ErrorInfo))
+								.map(it => ErrorInfo.fromBinary(it.value).reason)
+								.join(", ") ?? result.value.response.value?.message
+						}`;
 					}
 				}
 			})
