@@ -1,11 +1,12 @@
 import { ErrorInfo } from "@buf/googleapis_googleapis.bufbuild_es/google/rpc/error_details_pb";
 import { SessionService } from "@buf/pocketsign_apis.connectrpc_es/pocketsign/stamp/v1/session_connect";
-import { createPromiseClient } from "@connectrpc/connect";
+import { ConnectError, createPromiseClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { Callback, Error, Index } from "./pages";
 import { Verification_Result } from "@buf/pocketsign_apis.bufbuild_es/pocketsign/verify/v2/types_pb";
+import { getStampErrorMessage, getVerifyErrorMessage } from "./error";
 
 const client = createPromiseClient(
 	SessionService,
@@ -143,10 +144,7 @@ app.get("/callback", async c => {
 									[Verification_Result.CERTIFICATE_REVOKED]: "証明書が失効しています",
 									[Verification_Result.CERTIFICATE_EXPIRED]: "証明書が期限切れです",
 									[Verification_Result.UNSPECIFIED]: "不明なエラーが発生しました",
-								}[
-									result.value.response.value.verification?.result ??
-										Verification_Result.UNSPECIFIED
-								]
+								}[result.value.response.value.verification?.result ?? Verification_Result.UNSPECIFIED]
 							}。`;
 						}
 					}
@@ -165,12 +163,12 @@ app.get("/callback", async c => {
 					}
 					// 何らかの理由（例：証明書の期限切れ）で同意が確認できなかった場合
 					else {
-						return `最新4情報の提供の同意が確認できませんでした。理由：${
-							result.value.response.value?.details
-								.filter(it => it.is(ErrorInfo))
-								.map(it => ErrorInfo.fromBinary(it.value).reason)
-								.join(", ") ?? result.value.response.value?.message
-						}`;
+						const info = result.value.response.value?.details
+							.filter(it => it.is(ErrorInfo))
+							.map(it => ErrorInfo.fromBinary(it.value))[0];
+						return `最新4情報の提供の同意が確認できませんでした。理由：${getVerifyErrorMessage(
+							info?.reason,
+						)}`;
 					}
 				}
 			})
@@ -178,7 +176,11 @@ app.get("/callback", async c => {
 
 		return c.html(<Callback content={content} />);
 	} catch (e) {
-		return c.html(<Error message={`エラーが発生しました\n\n${JSON.stringify(e, undefined, 2)}`} />);
+		if (e instanceof ConnectError) {
+			const info = e.findDetails(ErrorInfo)[0];
+			return c.html(<Error message={getStampErrorMessage(info?.reason)} />);
+		}
+		return c.html(<Error message={`不明なエラーが発生しました\n\n${JSON.stringify(e, undefined, 2)}`} />);
 	}
 });
 
