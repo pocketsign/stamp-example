@@ -7,6 +7,7 @@ import { getCookie, setCookie } from "hono/cookie";
 import { Callback, Error, Index } from "./pages";
 import { Verification_Result } from "@buf/pocketsign_apis.bufbuild_es/pocketsign/verify/v2/types_pb";
 import { getStampErrorMessage, getVerifyErrorMessage } from "./error";
+import { Timestamp } from "@bufbuild/protobuf";
 
 const client = createPromiseClient(
 	SessionService,
@@ -81,9 +82,15 @@ app.post("/apply", async c => {
 					},
 				},
 			],
-			// この値は、セッションがFinalizeされるまでPocketSign Stampが保持します。
+			// セッションの有効期限を指定します。
+			expiresAt: Timestamp.fromDate(new Date(Date.now() + 1 * 60 * 60 * 1000)),
+			// この値は、セッション中に保持され、Finalize時に同じ値が返されます。
 			// ここでは、ランダムかつ再利用不可能な文字列 `nonce` を指定しています。
 			metadata: { nonce },
+			// スマートフォン上からアプリに遷移したとき、リダイレクトURLを利用せず、手動で元のブラウザに戻ることをユーザーに要求します。
+			requireManualReturn: true,
+			// `true` を指定すると、コールバック時に署名セッションIDがクエリパラメータ `session_id` として追加されます。
+			callbackWithSessionId: false,
 		},
 		{
 			headers: {
@@ -95,6 +102,8 @@ app.post("/apply", async c => {
 
 	// ユーザーのブラウザセッションと紐づけて `nonce` を保存します。
 	setCookie(c, "nonce", nonce);
+	// `callbackWithSessionId` に `false` を指定する場合、`session_id` を保存します。
+	setCookie(c, "session_id", resp.id);
 
 	// 利用者を署名を要求する Web ページの URL（リダイレクト URL）に遷移させます。
 	return c.redirect(resp.redirectUrl);
@@ -102,12 +111,21 @@ app.post("/apply", async c => {
 
 // Stamp Web サイトからのコールバックリクエストを受け取るエンドポイントです。
 app.get("/callback", async c => {
+	// `callbackWithSessionId` に `true` を指定した場合、コールバック URL にクエリパラメータ `session_id` が追加されるため、署名セッションIDを取得します。
+	// const sessionId = c.req.query("session_id");
+	// `callbackWithSessionId` に `false` を指定した場合、保存した `session_id` を取得します。
+	const sessionId = getCookie(c, "session_id");
+
+	if (!sessionId) {
+		return c.html(<Error message={"セッションIDがありません。"} />);
+	}
+
 	try {
 		// セッションを終了し、結果を取得します。
 		const resp = await client.finalizeSession(
 			{
-				// コールバック URL にクエリパラメータ `session_id` として追加された署名セッションIDを指定します。
-				id: c.req.query("session_id"),
+				// 署名セッションIDを指定します。
+				id: sessionId,
 			},
 			{
 				headers: {

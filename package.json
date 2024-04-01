@@ -4,14 +4,14 @@
 		"deploy": "wrangler deploy --minify src/index.tsx"
 	},
 	"dependencies": {
-		"@buf/pocketsign_apis.bufbuild_es": "^1.6.0-20240124113106-43cc13129f03.1",
-		"@buf/pocketsign_apis.connectrpc_es": "^1.3.0-20240124113106-43cc13129f03.1",
-		"@connectrpc/connect": "^1.3.0",
-		"@connectrpc/connect-web": "^1.3.0",
-		"hono": "^3.12.6"
+		"@buf/pocketsign_apis.bufbuild_es": "^1.8.0-20240403080743-62f56e69beed.2",
+		"@buf/pocketsign_apis.connectrpc_es": "^1.4.0-20240403080743-62f56e69beed.2",
+		"@connectrpc/connect": "^1.4.0",
+		"@connectrpc/connect-web": "^1.4.0",
+		"hono": "^4.2.1"
 	},
 	"devDependencies": {
-		"@cloudflare/workers-types": "^4.20240117.0",
-		"wrangler": "^3.24.0"
+		"@cloudflare/workers-types": "^4.20240402.0",
+		"wrangler": "^3.44.0"
 	}
 }
