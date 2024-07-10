@@ -6,8 +6,9 @@ import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
 import { Callback, Error, Index } from "./pages";
 import { Verification_Result } from "@buf/pocketsign_apis.bufbuild_es/pocketsign/verify/v2/types_pb";
-import { getStampErrorMessage, getVerifyErrorMessage } from "./error";
+import { extractErrorInfo, getStampErrorMessage, getVerifyErrorMessage } from "./error";
 import { Timestamp } from "@bufbuild/protobuf";
+import { Request_ReadFromInputSupportAP_ReadPersonalInfo_PasswordType } from "@buf/pocketsign_apis.bufbuild_es/pocketsign/stamp/v1/types_pb";
 
 const client = createPromiseClient(
 	SessionService,
@@ -109,6 +110,81 @@ app.post("/apply", async c => {
 	return c.redirect(resp.redirectUrl);
 });
 
+app.post("/register", async c => {
+	const url = new URL(c.req.url);
+
+	// ランダムかつ再利用不可能な文字列 `nonce` を生成します。
+	const nonce = crypto.randomUUID();
+
+	// 公的個人認証サービス(JPKI)より発行された署名用電子証明書を用いた署名や、最新の基本４情報取得についての同意について、利用者に要求を行うためのセッションを作成します。
+	const resp = await client.createSession(
+		{
+			// 署名が完了した後に利用者がコールバックされるべき URL（コールバック URL）を指定します。
+			// コールバックリクエストはGETリクエストとして送信され、署名セッションIDがクエリパラメータ `session_id` として追加されます。
+			callbackUrl: `${url.origin}/callback`,
+			// 申込情報への署名要求、最新４情報取得についての同意要求を指定します。
+			requests: [
+				{
+					required: true,
+					request: {
+						case: "userAuthentication",
+						value: {
+							// 署名対象となるデータを指定します。
+							content: new TextEncoder().encode(crypto.randomUUID()),
+							// この値は、ユーザーに当人認証を実施する目的を示すために利用されます。
+							// Markdown形式（CommonMark）で記述された文字列を指定することができます。
+							purpose: "ポケットサインターネットWebのアカウントを作成します",
+							// 利用者の識別を行うかどうかを指定します。
+							identifyUser: true,
+						},
+					},
+				},
+				{
+					required: true,
+					request: {
+						case: "readFromInputSupportAp",
+						value: {
+							// 内部認証の署名対象となるデータを指定します。
+							nonce: new TextEncoder().encode(crypto.randomUUID()),
+							// この値は、ユーザーに基本４情報・マイナンバー取得の目的を示すために利用されます。
+							// Markdown形式（CommonMark）で記述された文字列を指定することができます。
+							purpose: "〜のため氏名、性別、生年月日を利用します。\n〜のため住所を利用します。",
+							// 基本４情報を取得するかどうかを指定します。
+							readPersonalInfo: {
+								// 基本４情報の読み出し時に使用する暗証番号の種類を指定します。
+								passwordType: Request_ReadFromInputSupportAP_ReadPersonalInfo_PasswordType.PASSWORD,
+							},
+						},
+					},
+				},
+			],
+			// セッションの有効期限を指定します。
+			expiresAt: Timestamp.fromDate(new Date(Date.now() + 1 * 60 * 60 * 1000)),
+			// この値は、セッション中に保持され、Finalize時に同じ値が返されます。
+			// ここでは、ランダムかつ再利用不可能な文字列 `nonce` を指定しています。
+			metadata: { nonce },
+			// スマートフォン上からアプリに遷移したとき、リダイレクトURLを利用せず、手動で元のブラウザに戻ることをユーザーに要求します。
+			requireManualReturn: true,
+			// `true` を指定すると、コールバック時に署名セッションIDがクエリパラメータ `session_id` として追加されます。
+			callbackWithSessionId: false,
+		},
+		{
+			headers: {
+				// APIトークンを利用して認証します。
+				Authorization: `Bearer ${c.env?.POCKETSIGN_TOKEN}`,
+			},
+		},
+	);
+
+	// ユーザーのブラウザセッションと紐づけて `nonce` を保存します。
+	setCookie(c, "nonce", nonce);
+	// `callbackWithSessionId` に `false` を指定する場合、`session_id` を保存します。
+	setCookie(c, "session_id", resp.id);
+
+	// 利用者を署名を要求する Web ページの URL（リダイレクト URL）に遷移させます。
+	return c.redirect(resp.redirectUrl);
+});
+
 // Stamp Web サイトからのコールバックリクエストを受け取るエンドポイントです。
 app.get("/callback", async c => {
 	// `callbackWithSessionId` に `true` を指定した場合、コールバック URL にクエリパラメータ `session_id` が追加されます。
@@ -171,7 +247,8 @@ app.get("/callback", async c => {
 						return `お申し込みが確認できませんでした。理由：${result.value.response.value?.message}`;
 					}
 				}
-				// 最新の基本４情報取得についての同意を `required: false` としていた場合、同意が得られない可能性があり、その場合 `results` に含まれません。
+				// 最新の基本４情報取得についての同意結果を確認します。
+				// （`required: false` としていた場合、同意が得られない可能性があり、その場合 `results` に含まれません。）
 				if (result.case === "personalInfoConsent") {
 					// 同意が得られた場合
 					if (result.value.response.case === "result") {
@@ -181,12 +258,32 @@ app.get("/callback", async c => {
 					}
 					// 何らかの理由（例：証明書の期限切れ）で同意が確認できなかった場合
 					else {
-						const info = result.value.response.value?.details
-							.filter(it => it.is(ErrorInfo))
-							.map(it => ErrorInfo.fromBinary(it.value))[0];
+						const info = extractErrorInfo(result.value.response.value?.details);
 						return `最新4情報の提供の同意が確認できませんでした。理由：${getVerifyErrorMessage(
 							info?.reason,
 						)}`;
+					}
+				}
+				// 公的個人認証サービス(JPKI)より発行された利用者証明用電子証明書による署名の結果を確認します。
+				if (result.case === "userAuthentication") {
+					if (result.value.response.case === "result") {
+						return `登録に成功しました。User ID：${result.value.response.value?.user?.id} `;
+					} else {
+						const info = extractErrorInfo(result.value.response.value?.details);
+						return `登録に失敗しました。理由：${getVerifyErrorMessage(info?.reason)}`;
+					}
+				}
+				// 券面事項入力補助APによる基本４情報/マイナンバーの取得結果を確認します。
+				if (result.case === "readFromInputSupportAp") {
+					if (result.value.response.case === "result") {
+						const personalInfo = result.value.response.value.personalInfo;
+						const myNumber = result.value.response.value.myNumber;
+						return `券面情報の取得に成功しました。${
+							personalInfo ? `ようこそ ${personalInfo.commonName} さん！` : ""
+						}${myNumber ? `あなたのマイナンバーを取得しました：${myNumber.myNumber} ` : ""}`;
+					} else {
+						const info = extractErrorInfo(result.value.response.value?.details);
+						return `券面情報の取得に失敗しました。${info?.reason}`;
 					}
 				}
 			})

@@ -1,5 +1,7 @@
+import { ErrorInfo } from "@buf/googleapis_googleapis.bufbuild_es/google/rpc/error_details_pb";
 import { ErrorReason as StampErrorReason } from "@buf/pocketsign_apis.bufbuild_es/pocketsign/stamp/v1/types_pb";
 import { ErrorReason as VerifyErrorReason } from "@buf/pocketsign_apis.bufbuild_es/pocketsign/verify/v2/types_pb";
+import { Any } from "@bufbuild/protobuf";
 
 type StampErrorReasonKey = `ERROR_REASON_${keyof typeof StampErrorReason}`;
 
@@ -25,6 +27,7 @@ const VERIFY_ERROR_MESSAGES: Record<VerifyErrorReasonKey, string> = {
 	ERROR_REASON_CONSENT_SERVICE_CERTIFICATE_REVOKED: "証明書が失効しています。",
 	ERROR_REASON_CONSENT_SERVICE_CERTIFICATE_EXPIRED: "証明書が有効期限切れです。",
 	ERROR_REASON_CONSENT_SERVICE_CERTIFICATE_ON_HOLD: "証明書が一時保留状態です。",
+	ERROR_REASON_CONSENT_SERVICE_CERTIFICATE_NOT_SYNCED_YET: "証明書が未同期です。",
 	ERROR_REASON_CONSENT_SERVICE_VERIFICATION_FAILED: "電子署名の検証に失敗しました。",
 	ERROR_REASON_CONSENT_SERVICE_NOT_CONSENTED: "同意がありません。",
 	ERROR_REASON_CONSENT_SERVICE_CONSENT_EXPIRED: "同意が有効期限切れです。",
@@ -43,3 +46,7 @@ const VERIFY_ERROR_MESSAGES: Record<VerifyErrorReasonKey, string> = {
 
 export const getVerifyErrorMessage = (reason: string | undefined) =>
 	VERIFY_ERROR_MESSAGES[reason as VerifyErrorReasonKey];
+
+export const extractErrorInfo = (details?: Any[]) => {
+	return details?.filter(it => it.is(ErrorInfo)).map(it => ErrorInfo.fromBinary(it.value))[0];
+};

@@ -18,7 +18,7 @@ const Layout: FC = ({ children }) => {
 export const Index: FC = () => {
 	return (
 		<Layout>
-			<h1>ポケットサインターネット　お申し込み</h1>
+			<h1>ポケットサインターネット</h1>
 			<p>お申し込みはこちらから</p>
 			<form action="/apply" method="post">
 				<select name="plan">
@@ -28,6 +28,10 @@ export const Index: FC = () => {
 				</select>
 				<br />
 				<input type="submit" value="申し込む" />
+			</form>
+			<p>アカウント登録はこちらから</p>
+			<form action="/register" method="post">
+				<input type="submit" value="登録する" />
 			</form>
 		</Layout>
 	);
