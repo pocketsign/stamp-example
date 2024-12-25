@@ -1,15 +1,15 @@
 import { ErrorInfo } from "@buf/googleapis_googleapis.bufbuild_es/google/rpc/error_details_pb";
+import { Verification_Result } from "@buf/pocketsign_apis.bufbuild_es/pocketsign/verify/v2/types_pb";
 import { SessionService } from "@buf/pocketsign_apis.connectrpc_es/pocketsign/stamp/v1/session_connect";
-import { ConnectError, createPromiseClient } from "@connectrpc/connect";
+import { Timestamp } from "@bufbuild/protobuf";
+import { ConnectError, createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { Hono } from "hono";
 import { getCookie, setCookie } from "hono/cookie";
-import { Callback, Error, Index } from "./pages";
-import { Verification_Result } from "@buf/pocketsign_apis.bufbuild_es/pocketsign/verify/v2/types_pb";
 import { getStampErrorMessage, getVerifyErrorMessage } from "./error";
-import { Timestamp } from "@bufbuild/protobuf";
+import { Callback, Error, Index } from "./pages";
 
-const client = createPromiseClient(
+const client = createClient(
 	SessionService,
 	createConnectTransport({
 		baseUrl: "https://verify.mock.p8n.app",
@@ -25,7 +25,7 @@ const client = createPromiseClient(
 	}),
 );
 
-const app = new Hono();
+const app = new Hono<{ Bindings: { POCKETSIGN_TOKEN: string } }>();
 
 app.get("/", c => {
 	return c.html(<Index />);
@@ -95,7 +95,7 @@ app.post("/apply", async c => {
 		{
 			headers: {
 				// APIトークンを利用して認証します。
-				Authorization: `Bearer ${c.env?.POCKETSIGN_TOKEN}`,
+				Authorization: `Bearer ${c.env.POCKETSIGN_TOKEN}`,
 			},
 		},
 	);
@@ -129,7 +129,7 @@ app.get("/callback", async c => {
 			},
 			{
 				headers: {
-					Authorization: `Bearer ${c.env?.POCKETSIGN_TOKEN}`,
+					Authorization: `Bearer ${c.env.POCKETSIGN_TOKEN}`,
 				},
 			},
 		);
@@ -184,9 +184,7 @@ app.get("/callback", async c => {
 						const info = result.value.response.value?.details
 							.filter(it => it.is(ErrorInfo))
 							.map(it => ErrorInfo.fromBinary(it.value))[0];
-						return `最新4情報の提供の同意が確認できませんでした。理由：${getVerifyErrorMessage(
-							info?.reason,
-						)}`;
+						return `最新4情報の提供の同意が確認できませんでした。理由：${getVerifyErrorMessage(info?.reason)}`;
 					}
 				}
 			})
