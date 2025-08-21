@@ -1,7 +1,8 @@
-import { ErrorInfo } from "@buf/googleapis_googleapis.bufbuild_es/google/rpc/error_details_pb";
+import { ErrorInfoSchema } from "@buf/googleapis_googleapis.bufbuild_es/google/rpc/error_details_pb";
 import { Verification_Result } from "@buf/pocketsign_apis.bufbuild_es/pocketsign/verify/v2/types_pb";
-import { SessionService } from "@buf/pocketsign_apis.connectrpc_es/pocketsign/stamp/v1/session_connect";
-import { Timestamp } from "@bufbuild/protobuf";
+import { SessionService } from "@buf/pocketsign_apis.bufbuild_es/pocketsign/stamp/v1/session_pb";
+import { fromBinary } from "@bufbuild/protobuf";
+import { anyIs, timestampDate, timestampFromDate } from "@bufbuild/protobuf/wkt";
 import { ConnectError, createClient } from "@connectrpc/connect";
 import { createConnectTransport } from "@connectrpc/connect-web";
 import { Hono } from "hono";
@@ -83,7 +84,7 @@ app.post("/apply", async c => {
 				},
 			],
 			// セッションの有効期限を指定します。
-			expiresAt: Timestamp.fromDate(new Date(Date.now() + 1 * 60 * 60 * 1000)),
+			expiresAt: timestampFromDate(new Date(Date.now() + 1 * 60 * 60 * 1000)),
 			// この値は、セッション中に保持され、Finalize時に同じ値が返されます。
 			// ここでは、ランダムかつ再利用不可能な文字列 `nonce` を指定しています。
 			metadata: { nonce },
@@ -175,15 +176,15 @@ app.get("/callback", async c => {
 				if (result.case === "personalInfoConsent") {
 					// 同意が得られた場合
 					if (result.value.response.case === "result") {
-						return `また、最新4情報の提供に同意いただきありがとうございます。同意は ${result.value.response.value.expiresAt
-							?.toDate()
-							.toLocaleString()} まで有効です。`;
+						return `また、最新4情報の提供に同意いただきありがとうございます。同意は ${timestampDate(
+							result.value.response.value.expiresAt!,
+						)} まで有効です。`;
 					}
 					// 何らかの理由（例：証明書の期限切れ）で同意が確認できなかった場合
 					else {
 						const info = result.value.response.value?.details
-							.filter(it => it.is(ErrorInfo))
-							.map(it => ErrorInfo.fromBinary(it.value))[0];
+							.filter(it => anyIs(it, ErrorInfoSchema))
+							.map(it => fromBinary(ErrorInfoSchema, it.value))[0];
 						return `最新4情報の提供の同意が確認できませんでした。理由：${getVerifyErrorMessage(info?.reason)}`;
 					}
 				}
@@ -193,7 +194,7 @@ app.get("/callback", async c => {
 		return c.html(<Callback content={content} />);
 	} catch (e) {
 		if (e instanceof ConnectError) {
-			const info = e.findDetails(ErrorInfo)[0];
+			const info = e.findDetails(ErrorInfoSchema)[0];
 			return c.html(<Error message={getStampErrorMessage(info?.reason)} />);
 		}
 		return c.html(<Error message={`不明なエラーが発生しました\n\n${JSON.stringify(e, undefined, 2)}`} />);
