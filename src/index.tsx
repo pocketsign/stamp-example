@@ -64,24 +64,7 @@ app.post("/apply", async c => {
 							printableContent: `ポケットサインターネットにお申し込みいただきありがとうございます。申込内容は以下のとおりです。\n\nプラン: ${plan}`,
 						},
 					},
-				},
-				{
-					// falseを設定した場合は、利用者がこの要求をスキップできるようになります。
-					required: false,
-					request: {
-						// 最新の基本４情報取得についての同意を利用者に要求します。
-						case: "personalInfoConsent",
-						value: {
-							// 基本４情報のうち、提供に同意させるものを指定します。
-							preference: {
-								address: true,
-								commonName: true,
-								dateOfBirth: true,
-								gender: true,
-							},
-						},
-					},
-				},
+				}
 			],
 			// セッションの有効期限を指定します。
 			expiresAt: timestampFromDate(new Date(Date.now() + 1 * 60 * 60 * 1000)),
@@ -170,22 +153,6 @@ app.get("/callback", async c => {
 					// 署名が正常に作成されなかった場合
 					else {
 						return `お申し込みが確認できませんでした。理由：${result.value.response.value?.message}`;
-					}
-				}
-				// 最新の基本４情報取得についての同意を `required: false` としていた場合、同意が得られない可能性があり、その場合 `results` に含まれません。
-				if (result.case === "personalInfoConsent") {
-					// 同意が得られた場合
-					if (result.value.response.case === "result") {
-						return `また、最新4情報の提供に同意いただきありがとうございます。同意は ${timestampDate(
-							result.value.response.value.expiresAt!,
-						)} まで有効です。`;
-					}
-					// 何らかの理由（例：証明書の期限切れ）で同意が確認できなかった場合
-					else {
-						const info = result.value.response.value?.details
-							.filter(it => anyIs(it, ErrorInfoSchema))
-							.map(it => fromBinary(ErrorInfoSchema, it.value))[0];
-						return `最新4情報の提供の同意が確認できませんでした。理由：${getVerifyErrorMessage(info?.reason)}`;
 					}
 				}
 			})
